@@ -25,6 +25,10 @@ import pendulum
 
 from airflow.decorators import dag, task
 
+# testing that requirements.txt worked
+import pandas
+import requests
+import pyspark
 
 # [END import_module]
 
@@ -56,6 +60,23 @@ def ryan_test():
         pipeline. In this case, getting data is simulated by reading from a
         hardcoded JSON string.
         """
+        
+        # url = "https://bdfed.stitch.mlbinfra.com/bdfed/transform-mlb-schedule?stitch_env=prod&sortTemplate=5&sportId=1&&sportId=51&startDate=2023-07-01&endDate=2023-07-02&gameType=E&&gameType=S&&gameType=R&&gameType=F&&gameType=D&&gameType=L&&gameType=W&&gameType=A&language=en&leagueId=104&&leagueId=103&&leagueId=160&contextTeamId="
+        # response = requests.get(url)
+        # if response.ok:
+            # print(list(response.json().keys()))
+        # else:
+            # print(response.text)
+        
+        data = [{"a" : i, "b": i ** 2, "c": i ** 3} for i in range(1,10)]
+        
+        df = pandas.DataFrame.from_dict(data)
+        df.head()
+        
+        spark = SparkSession.builder.config(conf=SparkConf()).getOrCreate()
+        df = spark.createDataFrame(df)
+        print(df.schema)
+        
         data_string = '{"1001": 301.27, "1002": 433.21, "1003": 502.22}'
 
         order_data_dict = json.loads(data_string)
