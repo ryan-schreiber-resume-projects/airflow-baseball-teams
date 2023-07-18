@@ -102,6 +102,23 @@ services:
       start_period: 5s
     restart: always
 
+  baseball-database:
+    image: postgres:13
+    # ports:
+    #   - "5432:5432"
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - baseball-db-volume:/var/lib/postgresql/baseball
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: always
+
   redis:
     image: redis:latest
     expose:
@@ -298,3 +315,8 @@ services:
 
 volumes:
   postgres-db-volume:
+  baseball-db-volume:
+
+
+
+
