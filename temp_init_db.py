@@ -11,19 +11,12 @@ database = "airflow"
 database_url = f"postgresql://{username}:{password}@localhost:5432/{database}"
 engine = sqlalchemy.create_engine(database_url)
 
-
-
 # start by droping all existing tables
 with psycopg2.connect(database_url) as connection:
     with connection.cursor() as cursor:
         cursor.execute("DROP TABLE IF EXISTS test_table")
         connection.commit()
 
-# create a test table
-data = [{"a" : i, "b" : i ** 2} for i in range(20)]
-df = pandas.DataFrame(data)
-df.to_sql('test_table', engine, if_exists='append', index=False)
-df.to_sql('test_table', engine, if_exists='append', index=False)
 
 # teams reference data
 teams = [
@@ -318,8 +311,6 @@ teams = [
 ]
 df = pandas.DataFrame(teams)
 df.to_sql('teams', engine, if_exists='replace', index=False)
-
-exit()
 
 # collect the raw data from the api
 start_date = '01/01/2022'

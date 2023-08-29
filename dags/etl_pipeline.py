@@ -6,6 +6,7 @@ import pendulum
 import pandas
 import requests
 import statsapi
+import psycopg2
 
 from airflow.decorators import dag, task
 from sqlalchemy import create_engine
@@ -29,10 +30,19 @@ def etl_pipeline():
         Extract raw data from the mlb stats api in some cases or just from
         the "raw" table in the baseball database.
         """
+        
+        # drop the existing tables except raw and teams
+        with psycopg2.connect(conn_string) as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("drop table if exists schedule cascade")
+                cursor.execute("drop table if exists scores cascade")
+                cursor.execute("drop table if exists venues cascade")
+                conn.commit()
+        
         if source == "api":
             start_date = '01/01/2022'
             end_date = '12/15/2022'
-            team_ids = pandas.read_sql("""SELECT team_id FROM teams WHERE full_name NOT LIKE '%All%'""", engine)["team_id"]
+            team_ids = pandas.read_sql("""SELECT team_id FROM teams WHERE full_name NOT LIKE '%%All%%'""", engine)["team_id"]
 
             df = None
             for team_id in team_ids:
@@ -48,51 +58,52 @@ def etl_pipeline():
                     df = pandas.concat([df, temp]).drop_duplicates(["game_id"])
                 time.sleep(2)
 
-            df.to_sql('raw', engine, if_exists='replace', index=False)
+            # df.to_sql('raw2', engine, if_exists='replace', index=False)
 
 
         elif source == "database":
             df = pandas.read_sql("SELECT * FROM raw", engine)
-            load('raw2', df)
+            # df.to_sql('raw2', engine, if_exists='replace', index=False)
             return "raw"
 
         raise ValueError(f"Unknown source for extract step: {source}")
 
     @task()
     def generate_venues(raw):
-        raw = pandas.read_sql(f"SELECT * FROM raw", engine)
-        venues_df = raw.drop_duplicates(["venue_id", "venue_name"])[["venue_id", "venue_name"]]
-        load('venues', venues_df)
+        raw_df = pandas.read_sql(f"SELECT * FROM raw", engine)
+        venues_df = raw_df.drop_duplicates(["venue_id", "venue_name"])[["venue_id", "venue_name"]]
+        venues_df.to_sql('venues', engine, if_exists='replace', index=False)
         return 'venues'
 
     @task()
-    def generate_home_venues(schedule):
-        raw = pandas.read_sql(f"SELECT * FROM schedule", engine)
-        counts = schedule.groupby(['home_id', 'venue_id']).size().reset_index(name='counts')
+    def generate_home_venues(*args):
+        schedule_df = pandas.read_sql(f"SELECT * FROM schedule", engine)
+        counts = schedule_df.groupby(['home_id', 'venue_id']).size().reset_index(name='counts')
         home_venues = counts[counts["counts"] > 60].reset_index()
         home_venues["team_id"] = home_venues["home_id"]
         venues_df = home_venues[["team_id", "venue_id"]]
-        load('home_venues', venues_df)
+        venues_df.to_sql('home_venues', engine, if_exists='replace', index=False)
         return 'home_venues'
 
     @task()
-    def generate_schedule(raw):
-        raw = pandas.read_sql(f"SELECT * FROM raw", engine)
-        df = raw[[
+    def generate_schedule(*args):
+        raw_df = pandas.read_sql(f"SELECT * FROM raw", engine)
+        df = raw_df[[
             "game_id", "game_datetime", "game_date", "game_num",
             "away_id", "home_id", "venue_id"
         ]]
-        load('schedule', df)
+        df.to_sql('schedule', engine, if_exists='replace', index=False)
+        return 'schedule'
 
     @task()
-    def generate_scores(raw):
-        raw = pandas.read_sql(f"SELECT * FROM raw", engine)
-        finalized = raw[raw["status"] == "Final"][["game_id", "away_score", "home_score", "winning_team", "losing_team"]]
-        load('scores', finalized)
+    def generate_scores(*args):
+        raw_df = pandas.read_sql(f"SELECT * FROM raw", engine)
+        finalized = raw_df[raw_df["status"] == "Final"][["game_id", "away_score", "home_score", "winning_team", "losing_team"]]
+        finalized.to_sql('scores', engine, if_exists='replace', index=False)
         return 'scores'
 
     @task()
-    def generate_record(scores):
+    def generate_record(*args):
         df = pandas.read_sql("""
             SELECT teams.team_id, record.wins, record.losses FROM
             (
@@ -108,28 +119,19 @@ def etl_pipeline():
             ) AS record LEFT JOIN teams
             ON teams.full_name = record.team_name
         """, engine)
-        load('record', df)
+        df.to_sql('record', engine, if_exists='replace', index=False)
         return 'record'
 
-    @task()
-    def load(table_name, df):
-        """
-        #### Load task
-        A simple Load task which takes writes the given dataframe into a table
-        in the database, replacing if exists.
-        """
-        df.to_sql(table_name, engine, if_exists='replace', index=False)
 
 
         
 
     # [START main_flow]
     raw = extract_raw(source="database")
-    # raw = extract_raw(source="database")
     venues = generate_venues(raw)
     schedule = generate_schedule(raw)
     scores = generate_scores(raw)
-    #home_venues = generate_home_venues(schedule)
+    home_venues = generate_home_venues(schedule)
     record = generate_record(scores)
 
     # [END main_flow]
